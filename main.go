@@ -15,8 +15,10 @@ import (
 )
 
 var (
-	collection                            *mongo.Collection
-	dburl, dbport, dbname, collectionName string
+	collection                                      *mongo.Collection
+	client                                          *mongo.Client
+	ctx                                             = context.TODO()
+	dburl, dbport, dbname, collectionName, httpport string
 )
 
 func getEnv(key, defaultValue string) string {
@@ -32,34 +34,60 @@ func names(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "names")
 }
 
+func getAllNames(w http.ResponseWriter, r *http.Request) {
+	log.Println("start requests")
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	cur, err := collection.Find(ctx, bson.D{})
+	if err != nil {
+		log.Println(err, "err with find")
+	}
+	defer cur.Close(ctx)
+
+	for cur.Next(ctx) {
+		var result bson.M
+		err := cur.Decode(&result)
+		if err != nil {
+			log.Println(err, "err with cur")
+		}
+		log.Println("ssss", result)
+	}
+	if err := cur.Err(); err != nil {
+		log.Fatalln(err)
+	}
+	fmt.Fprint(w, "names")
+}
+
 func init() {
 	dburl = getEnv("DBURL", "localhost")
 	dbport = getEnv("DBPORT", "27017")
 	dbname = getEnv("DBNAME", "testing")
+	httpport = getEnv("LISTEN_PORT", "8182")
 	collectionName = getEnv("COLLECTIONNAME", "numbers")
+
+	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+	var err error
+	client, err = mongo.Connect(ctx, options.Client().ApplyURI("mongodb://"+dburl+":"+dbport))
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Println("connected to mongodb")
+
 }
 
 func main() {
 	router := mux.NewRouter()
 	router.HandleFunc("/", names)
 	router.HandleFunc("/name", names)
-	router.HandleFunc("/name/all", names)
+	router.HandleFunc("/name/all", getAllNames)
 	router.HandleFunc("/name/x", names)
 	router.HandleFunc("/name/busy", names)
 	router.HandleFunc("/name/loose", names)
 	http.Handle("/", router)
 
-	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI("mongodb://"+dburl+":"+dbport))
-
 	collection = client.Database(dbname).Collection(collectionName)
-	ctx, _ = context.WithTimeout(context.Background(), 5*time.Second)
-	res, err := collection.InsertOne(ctx, bson.M{"name": "pi", "value": 3.14159})
-	id := res.InsertedID
-	log.Println(id)
 
-	fmt.Println("Server is listening... on :8182")
-	err = http.ListenAndServe(":8182", nil)
+	log.Println("Server is listening... on :" + httpport)
+	err := http.ListenAndServe(":"+httpport, nil)
 	if err != nil {
 		log.Fatalln(err)
 	}
