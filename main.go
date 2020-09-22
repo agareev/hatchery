@@ -2,16 +2,18 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"encoding/json"
 	"log"
 	"net/http"
 	"os"
-	"time"
+
+	"hatchery/helper"
+	"hatchery/models"
 
 	"github.com/gorilla/mux"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 var (
@@ -29,32 +31,156 @@ func getEnv(key, defaultValue string) string {
 	return value
 }
 
-func names(w http.ResponseWriter, r *http.Request) {
-	log.Println("names")
-	fmt.Fprint(w, "names")
+func getNames(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// we created Book array
+	var names []models.Name
+
+	//Connection mongoDB with helper class
+	collection := helper.ConnectDB()
+
+	// bson.M{},  we passed empty filter. So we want to get all data.
+	cur, err := collection.Find(context.TODO(), bson.M{})
+
+	if err != nil {
+		helper.GetError(err, w)
+		return
+	}
+
+	// Close the cursor once finished
+	/*A defer statement defers the execution of a function until the surrounding function returns.
+	simply, run cur.Close() process but after cur.Next() finished.*/
+	defer cur.Close(context.TODO())
+
+	for cur.Next(context.TODO()) {
+
+		// create a value into which the single document can be decoded
+		var name models.Name
+		// & character returns the memory address of the following variable.
+		err := cur.Decode(&name) // decode similar to deserialize process.
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		// add item our array
+		names = append(names, name)
+	}
+
+	if err := cur.Err(); err != nil {
+		log.Fatal(err)
+	}
+
+	json.NewEncoder(w).Encode(names) // encode similar to serialize process.
 }
 
-func getAllNames(w http.ResponseWriter, r *http.Request) {
-	log.Println("start requests")
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
-	cur, err := collection.Find(ctx, bson.D{})
-	if err != nil {
-		log.Println(err, "err with find")
-	}
-	defer cur.Close(ctx)
+func xgetName(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
 
-	for cur.Next(ctx) {
-		var result bson.M
-		err := cur.Decode(&result)
-		if err != nil {
-			log.Println(err, "err with cur")
-		}
-		log.Println("ssss", result)
+	var name models.Name
+
+	//Connection mongoDB with helper class
+	collection := helper.ConnectDB()
+
+	// We create filter. If it is unnecessary to sort data for you, you can use bson.M{}
+	filter := bson.M{"used": bson.M{"$exists": false}}
+	err := collection.FindOne(context.TODO(), filter).Decode(&name)
+
+	if err != nil {
+		helper.GetError(err, w)
+		return
 	}
-	if err := cur.Err(); err != nil {
-		log.Fatalln(err)
+
+	json.NewEncoder(w).Encode(name)
+}
+
+func createName(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var name models.Name
+
+	// we decode our body request params
+	err := json.NewDecoder(r.Body).Decode(&name)
+	if err != nil {
+		log.Println(err)
 	}
-	fmt.Fprint(w, "names")
+
+	// connect db
+	collection := helper.ConnectDB()
+
+	log.Println(name)
+	// insert our book model.
+	result, err := collection.InsertOne(context.TODO(), name)
+
+	if err != nil {
+		helper.GetError(err, w)
+		return
+	}
+
+	json.NewEncoder(w).Encode(result)
+}
+
+func deleteName(w http.ResponseWriter, r *http.Request) {
+	// Set header
+	w.Header().Set("Content-Type", "application/json")
+
+	// get params
+	var params = mux.Vars(r)
+
+	// string to primitve.ObjectID
+	// name, err := primitive.ObjectIDFromHex(params["name"])
+
+	collection := helper.ConnectDB()
+
+	// prepare filter.
+	filter := bson.M{"name": params["name"]}
+
+	deleteResult, err := collection.DeleteMany(context.TODO(), filter)
+
+	if err != nil {
+		helper.GetError(err, w)
+		return
+	}
+
+	json.NewEncoder(w).Encode(deleteResult)
+}
+
+func updateName(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var params = mux.Vars(r)
+
+	//Get id from parameters
+	id, _ := primitive.ObjectIDFromHex(params["id"])
+
+	var name models.Name
+
+	collection := helper.ConnectDB()
+
+	// Create filter
+	filter := bson.M{"_id": id}
+
+	// Read update model from body request
+	_ = json.NewDecoder(r.Body).Decode(&name)
+
+	// prepare update model.
+	update := bson.D{
+		{"$set", bson.D{
+			{"name", name.Name},
+			{"user", name.Used},
+		}},
+	}
+
+	err := collection.FindOneAndUpdate(context.TODO(), filter, update).Decode(&name)
+
+	if err != nil {
+		helper.GetError(err, w)
+		return
+	}
+
+	name.ID = id
+
+	json.NewEncoder(w).Encode(name)
 }
 
 func init() {
@@ -64,31 +190,20 @@ func init() {
 	httpport = getEnv("LISTEN_PORT", "8182")
 	collectionName = getEnv("COLLECTIONNAME", "numbers")
 
-	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-	var err error
-	client, err = mongo.Connect(ctx, options.Client().ApplyURI("mongodb://"+dburl+":"+dbport))
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Println("connected to mongodb")
-
 }
 
 func main() {
+
 	router := mux.NewRouter()
-	router.HandleFunc("/", names)
-	router.HandleFunc("/name", names)
-	router.HandleFunc("/name/all", getAllNames)
-	router.HandleFunc("/name/x", names)
-	router.HandleFunc("/name/busy", names)
-	router.HandleFunc("/name/loose", names)
-	http.Handle("/", router)
+	router.HandleFunc("/", getNames).Methods("GET")
+	router.HandleFunc("/name", getNames).Methods("GET")
+	router.HandleFunc("/name", createName).Methods("POST")
+	router.HandleFunc("/name/{name}", deleteName).Methods("DELETE")
+	router.HandleFunc("/name/all", getNames).Methods("GET")
+	router.HandleFunc("/name/x", xgetName).Methods("GET")
+	router.HandleFunc("/name/busy", getNames).Methods("POST")
+	router.HandleFunc("/name/loose", getNames).Methods("POST")
 
-	collection = client.Database(dbname).Collection(collectionName)
-
-	log.Println("Server is listening... on :" + httpport)
-	err := http.ListenAndServe(":"+httpport, nil)
-	if err != nil {
-		log.Fatalln(err)
-	}
+	log.Println("Server is listening... on :8182")
+	log.Fatal(http.ListenAndServe(":8182", router))
 }
