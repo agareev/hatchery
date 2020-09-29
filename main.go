@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -74,7 +75,7 @@ func getNames(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(names) // encode similar to serialize process.
 }
 
-func xgetName(w http.ResponseWriter, r *http.Request) {
+func safeGetName(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	var name models.Name
@@ -94,6 +95,32 @@ func xgetName(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(name)
 }
 
+func xsetName(w http.ResponseWriter, r *http.Request) {
+	var name models.Name
+
+	//Connection mongoDB with helper class
+	collection := helper.ConnectDB()
+
+	// Create filter
+	filter := bson.M{"used": bson.M{"$exists": false}}
+
+	// prepare update model.
+	update := bson.D{
+		{"$set", bson.D{
+			{"used", true},
+		}},
+	}
+
+	err := collection.FindOneAndUpdate(context.TODO(), filter, update).Decode(&name)
+
+	if err != nil {
+		helper.GetError(err, w)
+		return
+	}
+
+	fmt.Fprintf(w, name.Name)
+
+}
 func createName(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -183,26 +210,60 @@ func updateName(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(name)
 }
 
+func makeFree(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var name models.Name
+
+	//Connection mongoDB with helper class
+	collection := helper.ConnectDB()
+	// we decode our body request params
+	err := json.NewDecoder(r.Body).Decode(&name)
+	if err != nil {
+		log.Println(err)
+	}
+
+	log.Println(name.Name)
+	// bson.M{}, we passed empty filter. So we want to get all data.
+	filter := bson.M{"name": name.Name}
+	update := bson.D{
+		{"$unset", bson.D{
+			{"used", ""},
+		}},
+	}
+	_, err = collection.UpdateOne(context.TODO(), filter, update)
+
+	if err != nil {
+		log.Println(err)
+	}
+
+	fmt.Fprintf(w, name.Name)
+}
+
 func init() {
 	dburl = getEnv("DBURL", "localhost")
 	dbport = getEnv("DBPORT", "27017")
 	dbname = getEnv("DBNAME", "testing")
 	httpport = getEnv("LISTEN_PORT", "8182")
 	collectionName = getEnv("COLLECTIONNAME", "numbers")
-
 }
 
 func main() {
 
 	router := mux.NewRouter()
+	// get all names
 	router.HandleFunc("/", getNames).Methods("GET")
 	router.HandleFunc("/name", getNames).Methods("GET")
-	router.HandleFunc("/name", createName).Methods("POST")
-	router.HandleFunc("/name/{name}", deleteName).Methods("DELETE")
 	router.HandleFunc("/name/all", getNames).Methods("GET")
-	router.HandleFunc("/name/x", xgetName).Methods("GET")
-	router.HandleFunc("/name/busy", getNames).Methods("POST")
-	router.HandleFunc("/name/loose", getNames).Methods("POST")
+	//
+	router.HandleFunc("/name", createName).Methods("POST")
+	router.HandleFunc("/name/{name}", deleteName).Methods("DELETE") // unused
+	// check next free name
+	router.HandleFunc("/name/x", safeGetName).Methods("GET")
+	// use via zergrush
+	router.HandleFunc("/name/x", xsetName).Methods("POST")
+
+	router.HandleFunc("/name/loose", makeFree).Methods("POST")
 
 	log.Println("Server is listening... on :8182")
 	log.Fatal(http.ListenAndServe(":8182", router))
