@@ -8,3 +8,9 @@ type Name struct {
 	Name string             `json:"name" bson:"name"`
 	Used bool               `json:"used,omitempty" bson:"used,omitempty"`
 }
+
+// ErrorResponse : This is error model.
+type ErrorResponse struct {
+	StatusCode   int    `json:"status"`
+	ErrorMessage string `json:"message"`
+}
