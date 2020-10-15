@@ -5,7 +5,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/sirupsen/logrus"
 	"hatchery/components"
-	handlers2 "hatchery/handlers"
+	"hatchery/handlers"
 	"log"
 	"net/http"
 	"strconv"
@@ -15,7 +15,7 @@ func main() {
 	cfg := components.NewConfiguration()
 
 	//if err := cfg.ParseEnvManual(); err != nil {
-	//	log.Fatal("Error upload conf from env: ", err)
+	//	logrus.Fatal("Error upload conf from env: ", err)
 	//}
 
 	if err := cfg.ParseEnvPkg(); err != nil {
@@ -28,7 +28,7 @@ func main() {
 		logrus.Fatal("Error connect to DB", err)
 	}
 
-	h := handlers2.NewNumbersHandler(dbComponent)
+	h := handlers.NewNumbersHandler(dbComponent)
 
 	router := mux.NewRouter()
 	// get all names
@@ -44,10 +44,10 @@ func main() {
 	router.HandleFunc("/name/x", h.XSetName).Methods("POST")
 	router.HandleFunc("/name/loose", h.MakeFree).Methods("POST")
 
-	logrus.Info("Server is listening... on :%d", cfg.Rest.Port)
+	logrus.Infof("Server is listening... on:%d", cfg.Rest.Port)
 	log.Fatal(http.ListenAndServe(prepareAddr(cfg), router))
 }
 
 func prepareAddr(cfg *components.Configuration) string {
-	return fmt.Sprintf(cfg.Rest.Host + strconv.Itoa(cfg.Rest.Port))
+	return fmt.Sprintf(cfg.Rest.Host + ":" + strconv.Itoa(cfg.Rest.Port))
 }

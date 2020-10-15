@@ -38,6 +38,7 @@ func (s *StorageComponent) ConnectDB() error {
 		return err
 	}
 
+	s.Client = client
 	//collection := client.Database("runners_info").Collection("shared_name")
 	logrus.Info("Connected to MongoDB!")
 	return nil
