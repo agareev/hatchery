@@ -6,7 +6,6 @@ import (
 	"github.com/sirupsen/logrus"
 	"hatchery/components"
 	"hatchery/handlers"
-	"log"
 	"net/http"
 	"strconv"
 )
@@ -45,7 +44,7 @@ func main() {
 	router.HandleFunc("/name/loose", h.MakeFree).Methods("POST")
 
 	logrus.Infof("Server is listening... on:%d", cfg.Rest.Port)
-	log.Fatal(http.ListenAndServe(prepareAddr(cfg), router))
+	logrus.Fatal(http.ListenAndServe(prepareAddr(cfg), router))
 }
 
 func prepareAddr(cfg *components.Configuration) string {

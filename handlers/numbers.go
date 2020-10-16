@@ -1,16 +1,15 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/gorilla/mux"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 	"hatchery/components"
 	"hatchery/models"
+	"io"
 	"log"
 	"net/http"
+
+	"github.com/gorilla/mux"
 )
 
 type NumbersHandler struct {
@@ -25,21 +24,17 @@ func NewNumbersHandler(db *components.StorageComponent) *NumbersHandler {
 
 func (n *NumbersHandler) CreateName(w http.ResponseWriter, r *http.Request) {
 	setupHeader(w)
-	var name models.Name
 
-	// we decode our body request params
-	err := json.NewDecoder(r.Body).Decode(&name)
+	name, err := parseBody(r.Body)
 	if err != nil {
-		log.Println(err)
+		getError(err, w)
 	}
 
 	log.Println(name)
-	collection := n.DbComponent.GetCollection()
-	// insert our book model.
-	result, err := collection.InsertOne(context.TODO(), name)
+
+	result, err := n.DbComponent.CreateName(name)
 	if err != nil {
 		getError(err, w)
-		return
 	}
 
 	json.NewEncoder(w).Encode(result)
@@ -48,83 +43,27 @@ func (n *NumbersHandler) CreateName(w http.ResponseWriter, r *http.Request) {
 func (n *NumbersHandler) GetNames(w http.ResponseWriter, r *http.Request) {
 	setupHeader(w)
 
-	// we created Book array
-	var names []models.Name
-
-	//Connection mongoDB with helper class
-	collection := n.DbComponent.GetCollection()
-
-	// bson.M{},  we passed empty filter. So we want to get all data.
-	cur, err := collection.Find(context.TODO(), bson.M{})
+	names, err := n.DbComponent.GetNames()
 	if err != nil {
 		getError(err, w)
-		return
-	}
-
-	// Close the cursor once finished
-	/*A defer statement defers the execution of a function until the surrounding function returns.
-	simply, run cur.Close() process but after cur.Next() finished.*/
-	defer cur.Close(context.TODO())
-
-	for cur.Next(context.TODO()) {
-		// create a value into which the single document can be decoded
-		var name models.Name
-		// & character returns the memory address of the following variable.
-		err := cur.Decode(&name) // decode similar to deserialize process.
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		// add item our array
-		names = append(names, name)
-	}
-
-	if err := cur.Err(); err != nil {
-		log.Fatal(err)
 	}
 
 	json.NewEncoder(w).Encode(names) // encode similar to serialize process.
 }
 
 func (n *NumbersHandler) SafeGetName(w http.ResponseWriter, r *http.Request) {
-	var name models.Name
-
-	//Connection mongoDB with helper class
-	collection := n.DbComponent.GetCollection()
-
-	// We create filter. If it is unnecessary to sort data for you, you can use bson.M{}
-	filter := bson.M{"used": bson.M{"$exists": false}}
-	err := collection.FindOne(context.TODO(), filter).Decode(&name)
-
+	name, err := n.DbComponent.SafeGetName()
 	if err != nil {
 		getError(err, w)
-		return
 	}
 
 	json.NewEncoder(w).Encode(name)
 }
 
 func (n *NumbersHandler) XSetName(w http.ResponseWriter, r *http.Request) {
-	var name models.Name
-
-	//Connection mongoDB with helper class
-	collection := n.DbComponent.GetCollection()
-
-	// Create filter
-	filter := bson.M{"used": bson.M{"$exists": false}}
-
-	// prepare update model.
-	update := bson.D{
-		{"$set", bson.D{
-			{"used", true},
-		}},
-	}
-
-	err := collection.FindOneAndUpdate(context.TODO(), filter, update).Decode(&name)
-
+	name, err := n.DbComponent.XSetName()
 	if err != nil {
 		getError(err, w)
-		return
 	}
 
 	fmt.Fprintf(w, name.Name)
@@ -137,19 +76,9 @@ func (n *NumbersHandler) DeleteName(w http.ResponseWriter, r *http.Request) {
 	// get params
 	var params = mux.Vars(r)
 
-	// string to primitve.ObjectID
-	// name, err := primitive.ObjectIDFromHex(params["name"])
-
-	collection := n.DbComponent.GetCollection()
-
-	// prepare filter.
-	filter := bson.M{"name": params["name"]}
-
-	deleteResult, err := collection.DeleteMany(context.TODO(), filter)
-
+	deleteResult, err := n.DbComponent.DeleteName(params)
 	if err != nil {
 		getError(err, w)
-		return
 	}
 
 	json.NewEncoder(w).Encode(deleteResult)
@@ -160,67 +89,46 @@ func (n *NumbersHandler) UpdateName(w http.ResponseWriter, r *http.Request) {
 
 	var params = mux.Vars(r)
 
-	//Get id from parameters
-	id, _ := primitive.ObjectIDFromHex(params["id"])
-
-	var name models.Name
-
-	collection := n.DbComponent.GetCollection()
-
-	// Create filter
-	filter := bson.M{"_id": id}
-
-	// Read update model from body request
-	_ = json.NewDecoder(r.Body).Decode(&name)
-
-	// prepare update model.
-	update := bson.D{
-		{"$set", bson.D{
-			{"name", name.Name},
-			{"user", name.Used},
-		}},
-	}
-
-	err := collection.FindOneAndUpdate(context.TODO(), filter, update).Decode(&name)
-
+	name, err := parseBody(r.Body)
 	if err != nil {
 		getError(err, w)
-		return
 	}
 
-	name.ID = id
+	newName, err := n.DbComponent.UpdateName(params, name)
+	if err != nil {
+		getError(err, w)
+	}
 
-	json.NewEncoder(w).Encode(name)
+	json.NewEncoder(w).Encode(newName)
 }
 
 func (n *NumbersHandler) MakeFree(w http.ResponseWriter, r *http.Request) {
 	setupHeader(w)
 
-	var name models.Name
-
-	//Connection mongoDB with helper class
-	collection := n.DbComponent.GetCollection()
-	// we decode our body request params
-	err := json.NewDecoder(r.Body).Decode(&name)
+	name, err := parseBody(r.Body)
 	if err != nil {
-		log.Println(err)
+		getError(err, w)
 	}
 
 	log.Println(name.Name)
-	// bson.M{}, we passed empty filter. So we want to get all data.
-	filter := bson.M{"name": name.Name}
-	update := bson.D{
-		{"$unset", bson.D{
-			{"used", ""},
-		}},
-	}
-	_, err = collection.UpdateOne(context.TODO(), filter, update)
 
+	err = n.DbComponent.MakeFee(name)
 	if err != nil {
-		log.Println(err)
+		getError(err, w)
 	}
 
 	fmt.Fprintf(w, name.Name)
+}
+
+func parseBody(body io.ReadCloser) (*models.Name, error) {
+	var name *models.Name
+	// we decode our body request params
+	err := json.NewDecoder(body).Decode(&name)
+	if err != nil {
+		return nil, err
+	}
+
+	return name, err
 }
 
 // getError : This is helper function to prepare error model.
