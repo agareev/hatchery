@@ -1,0 +1,133 @@
+swagger: "2.0"
+host: localhost:8182
+info:
+  description: Hatchery
+  title: Hatchery
+  version: v1
+schemes:
+  - http
+produces:
+  - application/json
+consumes:
+  - application/json
+paths:
+  /:
+    get:
+      description: get names
+      responses:
+        "200":
+          description: name info
+          schema:
+            $ref: '#/definitions/NameCollectionResponse'
+        "500":
+          description: Not Ok
+          schema:
+            $ref: '#/definitions/HatcheryError'
+      tags:
+        - name
+  /name:
+    get:
+      description: get names by name
+      responses:
+        "200":
+          description: name info
+          schema:
+            $ref: '#/definitions/NameCollectionResponse'
+        "500":
+          description: Not Ok
+          schema:
+            $ref: '#/definitions/HatcheryError'
+      tags:
+        - name
+    post:
+      description: create name
+      parameters:
+        - in: body
+          name: payload
+          required: true
+          schema:
+            $ref: '#/definitions/NameRequest'
+      responses:
+        "200":
+          description: name info
+          schema:
+            $ref: '#/definitions/NameResponse'
+        "500":
+          description: Not Ok
+          schema:
+            $ref: '#/definitions/HatcheryError'
+      tags:
+        - name
+  /name/{nameId}:
+    delete:
+      description: delete name
+      parameters:
+        - description: Name ID
+          in: path
+          name: nameId
+          required: true
+          type: string
+      responses:
+        "200":
+          description: OK
+        "500":
+          description: Not Ok
+          schema:
+            $ref: '#/definitions/HatcheryError'
+      tags:
+        - name
+  /name/all:
+    get:
+      description: get names all
+      produces:
+        - application/json
+      schemes:
+        - http
+      responses:
+        "200":
+          description: all names info
+          schema:
+            $ref: '#/definitions/NameCollectionResponse'
+        "500":
+          description: Not Ok
+          schema:
+            $ref: '#/definitions/HatcheryError'
+      tags:
+        - name
+
+definitions:
+  NameRequest:
+    type: object
+    properties:
+      name:
+        type: string
+    required:
+      - name
+  NameResponse:
+    type: object
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+    required:
+      - id
+      - name
+  NameCollectionResponse:
+    description: name collection
+    type: array
+    items:
+      $ref: "#/definitions/NameResponse"
+  HatcheryError:
+    description: HatcheryError
+    properties:
+      code:
+        description: error code
+        type: integer
+        x-nullable: false
+      detail:
+        description: a human-readable explanation specific to this occurrence of the problem.
+        example: Value of ID must be an integer
+        type: string
+        x-nullable: false
+    type: object
