@@ -1,0 +1,49 @@
+---
+resources:
+  - name: resource-hatchery
+    type: git
+    source:
+      uri: https://github.com/agareev/hatchery.git
+      branch: master
+
+  - name: release
+    type: s3
+    source:
+      bucket: other/
+      regexp: (hatchery)
+      access_key_id: ((s3devlogin))
+      secret_access_key: ((s3devpassword))
+      disable_ssl: true
+      endpoint: ((s3devurl))
+
+jobs:
+  - name: job-buildh
+    serial: true
+    plan:
+      - get: resource-hatchery
+      - set_pipeline: set-pipelines
+        file: resource-hatchery/ci/pipeline.yml
+      - task: build-hatchery
+        config:
+          platform: linux
+          image_resource:
+            type: docker-image
+            source: {repository: golang}
+          inputs:
+            - name: resource-hatchery
+          outputs:
+          - name: hatchery
+          run:
+            dir: ./resource-hatchery
+            path: sh
+            args:
+            - -exc
+            - |
+
+              make
+              cp resource-hatchery ../hatchery/hatchery
+      - put: release
+        params:
+          file: hatchery/hatchery
+          acl: public-read
+
