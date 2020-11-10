@@ -21,7 +21,7 @@ jobs:
     serial: true
     plan:
       - get: resource-hatchery
-      - set_pipeline: set-pipelines
+      - set_pipeline: go-build
         file: resource-hatchery/ci/pipeline.yml
       - task: build-hatchery
         config:
